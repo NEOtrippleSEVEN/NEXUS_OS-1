@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ *
+ * Nexus OS — brand tokens + primitives
+ * Light, warm "paper" canvas · dot-grid · monochrome · frosted glass.
+ * Component JSX uses these classes plus Tailwind utilities for layout.
+ * ------------------------------------------------------------------ */
+:root {
+  --nx-canvas: #edece7;       /* warm paper background            */
+  --nx-canvas-2: #f4f3ef;     /* slightly lighter surface         */
+  --nx-ink: #23231f;          /* near-black text / primary action  */
+  --nx-ink-soft: #5f5f58;     /* secondary text                    */
+  --nx-muted: #8c8c85;        /* tertiary text                     */
+  --nx-faint: #a0a099;        /* labels / hints                    */
+  --nx-line: rgba(0, 0, 0, 0.07);
+  --nx-line-strong: rgba(0, 0, 0, 0.12);
+  --nx-glass: rgba(255, 255, 255, 0.70);
+  --nx-field: rgba(255, 255, 255, 0.55);
+  --nx-dot: rgba(0, 0, 0, 0.06);
+  --nx-radius: 14px;
+  --nx-radius-sm: 9px;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background-color: var(--nx-canvas);
+  background-image: radial-gradient(circle at center, var(--nx-dot) 1px, transparent 1px);
+  background-size: 22px 22px;
+  color: var(--nx-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Frosted-glass card — the Main Goal / Journey / Performance card look. */
+.nx-glass {
+  background: var(--nx-glass);
+  border: 1px solid var(--nx-line);
+  border-radius: var(--nx-radius);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 10px 30px rgba(0, 0, 0, 0.05);
+  backdrop-filter: blur(6px);
+}
+
+/* Tiny letter-spaced caps label (matches THE FOUNDER'S OPERATING SYSTEM). */
+.nx-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.7px;
+  color: var(--nx-faint);
+  text-transform: uppercase;
+}
+
+.nx-field {
+  width: 100%;
+  background: var(--nx-field);
+  border: 1px solid var(--nx-line-strong);
+  border-radius: var(--nx-radius-sm);
+  color: var(--nx-ink);
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.5;
+  padding: 10px 12px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.nx-field:focus { border-color: rgba(0, 0, 0, 0.30); }
+.nx-field::placeholder { color: #aeaea6; }
+
+.nx-chip {
+  font-size: 12px;
+  color: var(--nx-ink-soft);
+  background: var(--nx-field);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  padding: 5px 11px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.nx-chip:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: var(--nx-line-strong);
+  color: var(--nx-ink);
+}
+
+.nx-btn {
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  border-radius: var(--nx-radius-sm);
+  padding: 11px 14px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  transition: background 0.15s, opacity 0.15s, border-color 0.15s;
+}
+.nx-btn-primary { background: var(--nx-ink); color: #f4f3ef; }
+.nx-btn-primary:hover { background: #000; }
+.nx-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.nx-btn-ghost { background: transparent; border-color: var(--nx-line-strong); color: var(--nx-ink-soft); }
+.nx-btn-ghost:hover { background: rgba(255, 255, 255, 0.6); }
+.nx-btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }

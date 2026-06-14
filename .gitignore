@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-ssr
+
+# Secrets — never commit the API key (live proxy lands in Chunk 5)
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+*.local
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea
