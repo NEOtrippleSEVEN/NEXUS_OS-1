@@ -4,6 +4,7 @@ import {
   ChevronRight, RotateCcw, Loader2, AlertCircle, Calendar, ListChecks,
 } from 'lucide-react'
 import { addWeeks, weeksBetween, effVelocity, reDate, horizonOf, applyDates, MS_PER_WEEK } from './engine/pacing.js'
+import { sharpen, generatePath, expandMilestone, decomposeTask } from './engine/claudeClient.js'
 
 /* ====================================================================== *
  *  NEXUS OS — Path Engine  ·  V0 monolith
@@ -22,154 +23,10 @@ import { addWeeks, weeksBetween, effVelocity, reDate, horizonOf, applyDates, MS_
  * ====================================================================== */
 
 /* ----------------------------------------------------------------------
- * LLM config  (Chunk 1: a direct browser fetch that FAILS with no key —
- * that is the expected state. Chunk 2 replaces this with a mock client;
- * Chunk 5 routes it through a key-holding proxy.)
+ * LLM calls + prompts now live in src/engine/claudeClient.js (MOCK mode),
+ * imported at the top. The fence-strip + one-retry parse lives there, never
+ * in the UI — CLAUDE.md rule 3.
  * -------------------------------------------------------------------- */
-const CLAUDE_ENDPOINT = 'https://api.anthropic.com/v1/messages'
-const CLAUDE_MODEL = 'claude-sonnet-4-6'
-
-/* ----------------------------------------------------------------------
- * Prompts  (Chunk 5 moves these into src/engine/prompts.js)
- * The TASK_RULES string is shared by every prompt that emits tasks.
- * -------------------------------------------------------------------- */
-const TASK_RULES = `Every task MUST be:
-- session-sized: roughly 2-4 hours of focused work, not a multi-day epic
-- concrete: a "firstAction" the founder could literally start in the next 10 minutes
-- verifiable: a "doneCriterion" that is observably true or false, never "make progress on X"
-- an outcome, not an activity ("100 signups live" not "work on marketing")
-Emit effort in HOURS only. Never output dates, weeks, or a schedule — the engine dates everything.`
-
-const SHARPEN_SYSTEM = `You are the Nexus OS goal-sharpening interviewer. A founder states a mission;
-your job is to interrogate it until it is precise enough to plan against, then stop.
-
-Reason against this internal rubric (do NOT recite it as a checklist — ask naturally):
-  1. Outcome + metric  — the literal, measurable success state ("$10k MRR", not "be successful")
-  2. Deadline          — a real target date
-  3. Starting line     — where they are now (idea / prototype / live / revenue; audience; what exists)
-  4. Time budget       — honest hours/week, and what competes for them
-  5. Assets & limits   — skills/tools/audience/money they already have, and hard constraints
-  6. First concrete win — what "done" looks like for the very first milestone
-
-Adapt: skip anything already answered, and DRILL vague answers ("'get fit' — fit measured how, by when?").
-Ask ONE sharp question at a time. Most goals are sharp after 2-6 questions; do not over-interview.
-
-Respond with ONLY a JSON object, no prose, no code fences:
-  {"status":"question","question":"<one sharp question>"}
-  — or, once the goal is precise enough —
-  {"status":"ready","brief":{"outcome":"...","metric":"...","deadline":"...","startingLine":"...","hoursPerWeek":<n>,"assets":"...","constraints":"...","firstWin":"..."}}`
-
-const GENERATE_SYSTEM = `You are the Nexus OS path planner. Given a sharpened brief, return an honest path of
-about 5 milestones from the founder's real starting line to the outcome. Be specific to THIS
-founder's situation — no generic filler. If the brief is still too vague to plan honestly, say so.
-
-${TASK_RULES}
-
-Respond with ONLY a JSON object, no prose, no code fences:
-  {"status":"generated","milestones":[{"title":"...","summary":"<one line>","effortHours":<n>}]}
-  — or —
-  {"status":"needs_sharpening","reason":"<one specific question to sharpen the goal>"}`
-
-const EXPAND_SYSTEM = `You expand ONE milestone into 3-4 session-sized tasks for a Nexus OS path.
-
-${TASK_RULES}
-
-Respond with ONLY a JSON object, no prose, no code fences:
-  {"tasks":[{"title":"...","firstAction":"...","doneCriterion":"...","effortHours":<n>}]}`
-
-const DECOMPOSE_SYSTEM = `You break ONE task into exactly 3 concrete micro-steps. Where a step needs a fact, link,
-or reason the founder would otherwise have to look up, include "why" and/or "source".
-
-Respond with ONLY a JSON object, no prose, no code fences:
-  {"steps":[{"text":"...","why":"...","source":"..."}]}  (why/source optional per step)`
-
-/* ----------------------------------------------------------------------
- * Pacing math now lives in src/engine/pacing.js — pure + unit-tested
- * (addWeeks · weeksBetween · effVelocity · reDate · horizonOf · applyDates,
- * imported at the top). No date math inline here — CLAUDE.md rules 1 & 2.
- * -------------------------------------------------------------------- */
-
-/* ----------------------------------------------------------------------
- * LLM client  (Chunk 2 extracts this to src/engine/claudeClient.js; the
- * parse + one-retry logic lives HERE, never in the UI — Chunk 5 keeps it
- * in the client when the live proxy lands.)
- * -------------------------------------------------------------------- */
-class ClaudeError extends Error {
-  constructor(message, status, detail) {
-    super(message)
-    this.name = 'ClaudeError'
-    this.status = status
-    this.detail = detail
-  }
-}
-
-// Models sometimes wrap JSON in ```json ... ``` fences; strip them before parse.
-function stripFences(text) {
-  return text
-    .trim()
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim()
-}
-
-async function callClaude(system, messages, maxTokens = 2000, isRetry = false) {
-  const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY // undefined in Chunk 1 -> call fails
-  const resp = await fetch(CLAUDE_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey || '',
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: maxTokens, system, messages }),
-  })
-
-  if (!resp.ok) {
-    const detail = await resp.text().catch(() => '')
-    throw new ClaudeError(`Claude request failed (HTTP ${resp.status})`, resp.status, detail)
-  }
-
-  const data = await resp.json()
-  const text = data?.content?.[0]?.text ?? ''
-  const truncated = data?.stop_reason === 'max_tokens'
-
-  try {
-    if (truncated) throw new Error('truncated')
-    return JSON.parse(stripFences(text))
-  } catch {
-    // One compact retry on truncation or a bad parse — ask for clean JSON with more room.
-    if (!isRetry) {
-      const retryMessages = [
-        ...messages,
-        { role: 'assistant', content: text },
-        { role: 'user', content: 'That was cut off or not valid JSON. Reply again with ONLY the complete, valid JSON object — no prose, no code fences.' },
-      ]
-      return callClaude(system, retryMessages, maxTokens + 1000, true)
-    }
-    throw new ClaudeError('The model did not return valid JSON.', 200, text)
-  }
-}
-
-// The four typed calls. Same signatures the extracted client will keep.
-function sharpen(conversation, constraints) {
-  const messages = [{ role: 'user', content: JSON.stringify({ constraints, conversation }) }]
-  return callClaude(SHARPEN_SYSTEM, messages, 1200)
-}
-function generatePath(brief, constraints) {
-  const messages = [{ role: 'user', content: JSON.stringify({ brief, constraints }) }]
-  return callClaude(GENERATE_SYSTEM, messages, 2500)
-}
-function expandMilestone(milestone, brief) {
-  const slim = { title: milestone.title, summary: milestone.summary, effortHours: milestone.effortHours }
-  const messages = [{ role: 'user', content: JSON.stringify({ brief, milestone: slim }) }]
-  return callClaude(EXPAND_SYSTEM, messages, 1800)
-}
-function decomposeTask(task, context) {
-  const slim = { title: task.title, firstAction: task.firstAction, doneCriterion: task.doneCriterion }
-  const messages = [{ role: 'user', content: JSON.stringify({ context, task: slim }) }]
-  return callClaude(DECOMPOSE_SYSTEM, messages, 1200)
-}
 
 /* ----------------------------------------------------------------------
  * Small helpers
@@ -189,11 +46,13 @@ function toMilestone(m, i) {
 }
 // Map a thrown error to a calm, honest sentence for the founder.
 function humanError(err) {
-  if (err instanceof ClaudeError && (err.status === 401 || err.status === 403 || err.status === 0)) {
-    return 'The engine has no API key wired up yet — that is expected in Chunk 1. Offline mock mode (free) lands in Chunk 2.'
+  // MOCK mode resolves instantly, so this is mostly dormant until the live
+  // proxy is wired (Chunk 5).
+  if (err?.status === 401 || err?.status === 403) {
+    return 'The engine has no API key yet — that arrives with the live proxy (Chunk 5). Offline mock mode should answer instantly.'
   }
   if (err instanceof TypeError) {
-    return 'Could not reach the engine. In Chunk 1 there is no backend yet — mock mode arrives in Chunk 2.'
+    return 'Could not reach the engine. Offline mock mode needs no network — check src/engine/claudeClient.js.'
   }
   return err?.message || 'Something went wrong talking to the engine.'
 }
