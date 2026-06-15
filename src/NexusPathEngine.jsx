@@ -3,6 +3,7 @@ import {
   Sprout, ArrowRight, Lock, Search, CornerDownLeft, Check, ChevronDown,
   ChevronRight, RotateCcw, Loader2, AlertCircle, Calendar, ListChecks,
 } from 'lucide-react'
+import { addWeeks, weeksBetween, effVelocity, reDate, horizonOf, applyDates, MS_PER_WEEK } from './engine/pacing.js'
 
 /* ====================================================================== *
  *  NEXUS OS — Path Engine  ·  V0 monolith
@@ -27,7 +28,6 @@ import {
  * -------------------------------------------------------------------- */
 const CLAUDE_ENDPOINT = 'https://api.anthropic.com/v1/messages'
 const CLAUDE_MODEL = 'claude-sonnet-4-6'
-const PRIOR_WEEKS = 2 // strength of the "planned pace" prior in effVelocity()
 
 /* ----------------------------------------------------------------------
  * Prompts  (Chunk 5 moves these into src/engine/prompts.js)
@@ -84,56 +84,10 @@ Respond with ONLY a JSON object, no prose, no code fences:
   {"steps":[{"text":"...","why":"...","source":"..."}]}  (why/source optional per step)`
 
 /* ----------------------------------------------------------------------
- * Pacing math  (Chunk 3 extracts this to src/engine/pacing.js, pure + tested)
- * Rule 2: no I/O, no React, "today" is always passed in — never read here.
+ * Pacing math now lives in src/engine/pacing.js — pure + unit-tested
+ * (addWeeks · weeksBetween · effVelocity · reDate · horizonOf · applyDates,
+ * imported at the top). No date math inline here — CLAUDE.md rules 1 & 2.
  * -------------------------------------------------------------------- */
-const MS_PER_WEEK = 7 * 24 * 60 * 60 * 1000
-const addWeeks = (date, weeks) => new Date(date.getTime() + weeks * MS_PER_WEEK)
-const weeksBetween = (a, b) => (b.getTime() - a.getTime()) / MS_PER_WEEK
-
-// Observed pace blended with the planned pace as a prior, so a single slow (or
-// fast) milestone nudges the horizon instead of whipping it around. With an
-// empty log this returns exactly plannedHPW.
-function effVelocity(plannedHPW, log) {
-  let hours = PRIOR_WEEKS * plannedHPW // pseudo-observations from the plan
-  let weeks = PRIOR_WEEKS
-  for (const e of log) {
-    hours += e.estHours // the work that was estimated...
-    weeks += e.actualWeeks // ...over the calendar weeks it really took
-  }
-  return hours / weeks // effective hours delivered per week
-}
-
-// Lay non-complete milestones end-to-end from `fromDate` at `velocity` h/wk.
-// Completed milestones keep their real (actual) dates and push the cursor.
-function reDate(milestones, fromDate, velocity) {
-  let cursor = fromDate
-  return milestones.map((m) => {
-    if (m.status === 'complete' && m.actualStart && m.actualEnd) {
-      if (m.actualEnd > cursor) cursor = m.actualEnd
-      return m
-    }
-    const weeks = m.effortHours / velocity
-    const plannedStart = cursor
-    const plannedEnd = addWeeks(cursor, weeks)
-    cursor = plannedEnd
-    return { ...m, plannedStart, plannedEnd }
-  })
-}
-
-// The finish-line: the latest end date across all milestones.
-function horizonOf(milestones) {
-  let last = null
-  for (const m of milestones) {
-    const end = m.status === 'complete' && m.actualEnd ? m.actualEnd : m.plannedEnd
-    if (end && (!last || end > last)) last = end
-  }
-  return last
-}
-
-function applyDates(milestones, fromDate, plannedHPW, log) {
-  return reDate(milestones, fromDate, effVelocity(plannedHPW, log))
-}
 
 /* ----------------------------------------------------------------------
  * LLM client  (Chunk 2 extracts this to src/engine/claudeClient.js; the
