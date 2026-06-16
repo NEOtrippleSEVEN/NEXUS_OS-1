@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Sprout, ArrowRight, Lock, Search, CornerDownLeft, Check, ChevronDown,
   ChevronRight, RotateCcw, Loader2, AlertCircle, Calendar, ListChecks,
 } from 'lucide-react'
 import { addWeeks, weeksBetween, effVelocity, reDate, horizonOf, applyDates, MS_PER_WEEK } from './engine/pacing.js'
 import { sharpen, generatePath, expandMilestone, decomposeTask } from './engine/claudeClient.js'
+import { load, save, clear } from './engine/pathStore.js'
 
 /* ====================================================================== *
  *  NEXUS OS — Path Engine  ·  V0 monolith
@@ -75,16 +76,24 @@ const EMPTY_ENG = {
  *  Component
  * ====================================================================== */
 export default function NexusPathEngine() {
-  // Domain state lives in one object (this is what Chunk 4 will persist).
-  // useState(() => ...) is a "lazy initializer": the function runs once, on
-  // first render only — not on every re-render. Chunk 4 swaps it for load().
-  const [eng, setEng] = useState(() => ({ ...EMPTY_ENG, simToday: startOfToday() }))
+  // Domain state lives in one object — this is what pathStore persists.
+  // The lazy initializer (useState(() => ...)) runs once on first render only:
+  // load() returns a saved engine with its dates revived, or null on a fresh
+  // start, in which case we seed an empty engine dated to today.
+  const [eng, setEng] = useState(() => load() ?? { ...EMPTY_ENG, simToday: startOfToday() })
 
   // Transient UI-only state (not persisted).
   const [answer, setAnswer] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [expandedId, setExpandedId] = useState(null)
+
+  // Persist the whole engine whenever it changes. useEffect runs after every
+  // render where `eng` changed, so closing the tab and reopening resumes
+  // exactly where you left off — checked tasks, active milestone, horizon.
+  useEffect(() => {
+    save(eng)
+  }, [eng])
 
   const patch = (fields) => setEng((e) => ({ ...e, ...fields }))
 
@@ -224,7 +233,10 @@ export default function NexusPathEngine() {
   }
 
   function startOver() {
-    // Chunk 4 adds a confirm() + pathStore.clear() here.
+    // Losing a week of real progress is the worst bug this feature could have,
+    // so confirm before wiping an existing path.
+    if (eng.milestones.length > 0 && !window.confirm('Start over? This clears your current path and all its progress.')) return
+    clear()
     setEng({ ...EMPTY_ENG, simToday: startOfToday() })
     setExpandedId(null)
     setError(null)
