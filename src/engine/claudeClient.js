@@ -68,7 +68,7 @@ function mockSharpen(conversation) {
   const questions = vague ? VAGUE_QUESTIONS : SHARP_QUESTIONS
   const asked = conversation.filter((t) => t.role === 'engine').length
   if (asked < questions.length) return { status: 'question', question: questions[asked] }
-  return { status: 'ready', brief: BRIEF }
+  return { status: 'ready', brief: { ...BRIEF } }
 }
 
 function mockGeneratePath() {

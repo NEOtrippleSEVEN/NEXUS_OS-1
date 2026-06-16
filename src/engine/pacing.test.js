@@ -23,6 +23,14 @@ describe('effVelocity', () => {
     expect(v).toBeGreaterThan(rawObserved) // ...but the prior held it above raw observed
     expect(v).toBeCloseTo(6.667, 2) // (2*10 + 20) / (2 + 4)
   })
+
+  // Finding #1 — a 0 / blank / non-numeric hours-per-week must not poison the
+  // path. Without a floor, velocity 0 → reDate divides by zero → Invalid Dates.
+  it('floors a non-positive or non-finite planned pace to 1', () => {
+    expect(effVelocity(0, [])).toBe(1)
+    expect(effVelocity(NaN, [])).toBe(1)
+    expect(effVelocity(-5, [])).toBe(1)
+  })
 })
 
 describe('reDate', () => {

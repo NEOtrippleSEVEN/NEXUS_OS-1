@@ -22,7 +22,10 @@ export const weeksBetween = (a, b) => (b.getTime() - a.getTime()) / MS_PER_WEEK
 //
 //   log entries: { estHours, actualWeeks }
 export function effVelocity(plannedHPW, log) {
-  let hours = PRIOR_WEEKS * plannedHPW // pseudo-observations from the plan
+  // Floor a 0 / NaN / negative planned pace to 1, so velocity can never be 0 or
+  // NaN — otherwise reDate would divide effort by it and emit Invalid Dates.
+  const planned = Number.isFinite(plannedHPW) && plannedHPW > 0 ? plannedHPW : 1
+  let hours = PRIOR_WEEKS * planned // pseudo-observations from the plan
   let weeks = PRIOR_WEEKS
   for (const e of log) {
     hours += e.estHours // the work that was estimated...
